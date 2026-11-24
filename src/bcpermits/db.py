@@ -37,9 +37,9 @@ def get_engine(
         config, 
         access: str = 'read', 
         schema: str = 'public',
-        engine_kwargs: dict = {}) -> Engine:
+        engine_kwargs: dict = None) -> Engine:
     """
-    Helper method to get a sqlalchemy engine 
+    Helper method to get a sqlalchemy engine with defaults
 
     Args:
         config: Configuration dictionary containing database connection 
@@ -50,12 +50,14 @@ def get_engine(
     Returns:
         A sqlalchemy Engine
     """
-
+    kwargs = {
+        'pool_pre_ping': True,
+        'connect_args': {'options': f'-csearch_path={schema}'},
+        **(engine_kwargs or {})
+    }
     return (
         create_engine(
             db_url(config, access=access.upper()), 
-            pool_pre_ping=True,
-            connect_args={'options': f'-csearch_path={schema}'},
-            **engine_kwargs
+            **kwargs   
         )
     )
