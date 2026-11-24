@@ -1,10 +1,18 @@
 from datetime import datetime
-from sqlalchemy import String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Column, ForeignKey, INTEGER, VARCHAR, BOOLEAN, NUMERIC
-from sqlalchemy.dialects.postgresql import TEXT, DATE, TIMESTAMP
-from sqlalchemy.ext.declarative import as_declarative
-from sqlalchemy.orm import relationship, declared_attr, backref
+from sqlalchemy import (
+    Column, 
+    false,
+    ForeignKey,
+    func, 
+    INTEGER, 
+    VARCHAR, 
+    BOOLEAN
+)
+from sqlalchemy.dialects.postgresql import (
+    DATE,
+    TEXT, 
+    TIMESTAMP
+)
 from .db import (
     Base,
     CodeMixin,
@@ -34,7 +42,7 @@ class User(Base):
 class BackcountryUnit(Base):
     __tablename__ = 'backcountry_units'
 
-    unit_number =       Column(INTEGER, primary_key=True)
+    unit_number =       Column(INTEGER, primary_key=True, autoincrement=False)
     unit_name =         Column(VARCHAR(100))
     limit =             Column(INTEGER)
 
@@ -57,7 +65,9 @@ class Permit(Base, MetadataMixin):
     __tablename__ = 'permits'
 
     permit_number =     Column(INTEGER, primary_key=True)
-    is_admin =          Column(BOOLEAN, default=False)
+    legacy_permit_number =\
+                        Column(INTEGER) # old database has duplicates
+    is_admin =          Column(BOOLEAN, server_default=false())
     license_plate =     Column(VARCHAR(20))
     license_plate_state_code =\
                         Column(INTEGER, ForeignKey(StateCode.code))
@@ -67,12 +77,12 @@ class Permit(Base, MetadataMixin):
     parking_location =  Column(VARCHAR(100))
     party_size =        Column(INTEGER)
     tent_colors =       Column(VARCHAR(100))
-    is_bikepacking =    Column(BOOLEAN, default=False)
+    is_bikepacking =    Column(BOOLEAN, server_default=false())
     bike_descriptions = Column(VARCHAR(255))
-    is_packrafting =    Column(BOOLEAN, default=False)
+    is_packrafting =    Column(BOOLEAN, server_default=false())
     packraft_descriptions =\
                         Column(VARCHAR(255))
-    is_mountaineering = Column(BOOLEAN, default=False)
+    is_mountaineering = Column(BOOLEAN, server_default=false())
     emergency_contact_name =\
                         Column(VARCHAR(100))
     emergency_contact_phone =\
@@ -91,7 +101,11 @@ class BRFC(Base, MetadataMixin):
     id =                Column(INTEGER, primary_key=True)
     brfc_number =       Column(VARCHAR(20))
     brfc_status_code =  Column(INTEGER, ForeignKey(BRFCStatusCode.code))
-    date_added =        Column(DATE, default=datetime.now())
+    date_added =        Column(
+                            DATE, 
+                            default=datetime.now, 
+                            server_default=func.now()
+                        )
     date_decommissioned =\
                         Column(DATE)
 
@@ -101,8 +115,12 @@ class BRFCCheckout(Base, MetadataMixin):
     id =                Column(INTEGER, primary_key=True)
     brfc_id =           Column(INTEGER, ForeignKey(BRFC.id), nullable=False)
     permit_number =     Column(INTEGER, ForeignKey(Permit.permit_number))
-    is_longterm =       Column(BOOLEAN, default=False)
-    checkout_time =     Column(TIMESTAMP, default=datetime.now())
+    is_longterm =       Column(BOOLEAN, server_default=false())
+    checkout_time =     Column(
+                            TIMESTAMP, 
+                            default=datetime.now, 
+                            server_default=func.now()
+                        )
     checkin_time =      Column(TIMESTAMP)
 
 class PartyMember(Base, MetadataMixin):
