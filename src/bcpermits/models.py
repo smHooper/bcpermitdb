@@ -104,7 +104,7 @@ class BRFC(Base, MetadataMixin):
     date_added =        Column(
                             DATE, 
                             default=datetime.now, 
-                            server_default=func.now()
+                            server_default=func.current_date()
                         )
     date_decommissioned =\
                         Column(DATE)

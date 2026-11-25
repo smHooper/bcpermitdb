@@ -1,8 +1,17 @@
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import BOOLEAN, INTEGER, VARCHAR, create_engine, inspect, select
+from sqlalchemy import ( 
+    INTEGER, 
+    VARCHAR, 
+    create_engine, 
+    inspect, 
+    select,
+    text
+)
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateTable
 
 from bcpermits import models
 from bcpermits.db import CodeMixin, MetadataMixin
@@ -181,26 +190,47 @@ def test_varchar_lengths(table, column, length):
     assert col.type.length == length
 
 
-@pytest.mark.parametrize(
-    'column',
-    ['is_admin', 'is_bikepacking', 'is_packrafting', 'is_mountaineering'],
-)
-def test_permit_boolean_flags_default_false(column):
-    col = TABLES['permits'].c[column]
-    assert isinstance(col.type, BOOLEAN)
-    assert col.default.arg is False
+SERVER_DEFAULTS = [
+    ('permits', 'is_admin'),
+    ('permits', 'is_bikepacking'),
+    ('permits', 'is_packrafting'),
+    ('permits', 'is_mountaineering'),
+    ('brfc_checkouts', 'is_longterm'),
+    ('brfcs', 'date_added'),
+    ('brfc_checkouts', 'checkout_time'),
+]
 
 
-def test_brfc_checkout_is_longterm_default_false():
-    col = TABLES['brfc_checkouts'].c['is_longterm']
-    assert isinstance(col.type, BOOLEAN)
-    assert col.default.arg is False
+@pytest.mark.parametrize('table, column', SERVER_DEFAULTS)
+def test_server_default_defined(table, column):
+    assert TABLES[table].c[column].server_default is not None
+
+
+def test_every_python_default_has_a_server_default():
+    # Guards against the bug you just hit: a default that only exists in Python
+    missing = [
+        f'{t.name}.{c.name}'
+        for t in TABLES.values()
+        for c in t.c
+        if c.default is not None and c.server_default is None
+    ]
+    assert not missing
 
 
 def test_integer_columns():
     assert isinstance(TABLES['permits'].c['party_size'].type, INTEGER)
     assert isinstance(TABLES['backcountry_units'].c['limit'].type, INTEGER)
 
+
+def _pg_ddl(table):
+    return str(CreateTable(TABLES[table]).compile(dialect=postgresql.dialect()))
+
+
+def test_postgres_ddl_has_server_defaults():
+    assert 'DEFAULT false' in _pg_ddl('permits')
+    assert 'DEFAULT false' in _pg_ddl('brfc_checkouts')
+    assert 'DEFAULT now()' in _pg_ddl('brfc_checkouts')
+    assert 'DEFAULT CURRENT_DATE' in _pg_ddl('brfcs')
 
 # --------------------------------------------------------------------------
 # Behavioral tests against an in-memory SQLite database
@@ -292,6 +322,23 @@ def test_brfc_checkout_roundtrip(session):
     assert checkout.checkin_time is None
     assert checkout.checkout_time == datetime(2026, 7, 1, 9, 30)
 
+def test_server_defaults_apply_to_raw_sql(session):
+    session.execute(text('INSERT INTO permits (permit_number) VALUES (1)'))
+    session.execute(text('INSERT INTO brfcs (id) VALUES (1)'))
+    session.execute(text('INSERT INTO brfc_checkouts (id, brfc_id) VALUES (1, 1)'))
+    session.commit()
+
+    permit = session.get(models.Permit, 1)
+    assert permit.is_admin is False
+    assert permit.is_bikepacking is False
+    assert permit.is_packrafting is False
+    assert permit.is_mountaineering is False
+
+    assert session.get(models.BRFC, 1).date_added is not None
+
+    checkout = session.get(models.BRFCCheckout, 1)
+    assert checkout.is_longterm is False
+    assert checkout.checkout_time is not None
 
 @pytest.mark.parametrize(
     'obj_factory',
@@ -327,9 +374,6 @@ def test_code_table_code_must_be_unique(session):
         session.commit()
 
 
-# --------------------------------------------------------------------------
-# Known issue (documents current behavior; remove xfail once fixed)
-# --------------------------------------------------------------------------
 @pytest.mark.parametrize(
     'table, column',
     [('brfcs', 'date_added'), ('brfc_checkouts', 'checkout_time')],
